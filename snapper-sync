@@ -1,0 +1,144 @@
+#!/usr/bin/env python
+
+import argparse
+import sys
+import subprocess
+from pathlib import Path
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Sync snappers backups into another disk"
+    )
+
+    parser.add_argument(
+        "--source",
+        action="store",
+        required=True,
+        type=str,
+        help="Source subvolume to sync from",
+    )
+
+    parser.add_argument(
+        "--destination",
+        action="store",
+        required=True,
+        type=str,
+        help="Destination subvolume",
+    )
+
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        required=False,
+        help="Show verbose output",
+    )
+
+    return parser.prog, parser.parse_args()
+
+
+PROG, ARGS = parse_args()
+
+SOURCE = Path(ARGS.source)
+DESTINATION = Path(ARGS.destination)
+VERBOSE = ARGS.verbose
+
+
+def die(message):
+    sys.stderr.write(f'{PROG}: error: {message}\n')
+    sys.exit(1)
+
+
+def run_cmd(cmd):
+    subprocess.call(cmd, shell=True)
+
+
+def check_input_dir(input_dir):
+    if not input_dir.exists():
+        die(f'{input_dir} does not exist')
+    elif not input_dir.is_dir():
+        die(f'{input_dir} is not a directory')
+
+
+def print_source_snapshots_info(snapshots_dir, snapshots):
+    print(f'source snapshots dir: {snapshots_dir}')
+    for snapshot in snapshots:
+        print(f'snapshot at: {snapshot}')
+
+
+def create_destination_dir(destination_dir):
+    if VERBOSE:
+        print(f'destination snapshots dir: {destination_dir}')
+    
+    if not destination_dir.exists():
+        if VERBOSE:
+            print(f'creating destination dir (subvolume): {destination_dir}')
+        run_cmd(f'btrfs subvolume create {destination_dir}')
+
+
+def delete_old_snapshots(destination_dir, snaphots):
+    snaphots_ids = set([snapshot.parent.name for snapshot in snaphots])
+    for snapshot_dir in destination_dir.iterdir():
+        if snapshot_dir.is_dir() and (snapshot_dir.name not in snaphots_ids):
+            snapshot = snapshot_dir / "snapshot"
+            if VERBOSE:
+                print(f'deleting old snapshot at: {snapshot}')
+
+            run_cmd(f'btrfs subvolume delete {snapshot}')
+            snapshot_dir.unlink()
+
+
+def create_origin_snapshot(origin, new_origin):
+    if not new_origin.exists():
+        if VERBOSE:
+            print(f'creating origin snapshot at: {new_origin}')
+
+        new_origin.parent.mkdir(exist_ok=True)
+        cmd = f'btrfs send {origin} | btrfs receive {new_origin.parent}'
+        subprocess.call(cmd, shell=True)
+
+
+def create_snapshots(snapshots, new_snapshots):
+    for i in range(1, len(new_snapshots)):
+        parent_snapshot = snapshots[i - 1]
+        child_snapshot = snapshots[i]
+        new_snapshot = new_snapshots[i]
+        if not new_snapshot.exists():
+            if VERBOSE:
+                print(f'creating snapshot at: {new_snapshot}')
+
+            new_snapshot_dir = new_snapshot.parent
+            new_snapshot_dir.mkdir(exist_ok=True)
+            cmd = f'btrfs send -p {parent_snapshot} {child_snapshot} | btrfs receive {new_snapshot_dir}'
+            subprocess.call(cmd, shell=True)
+
+
+def main():
+    check_input_dir(SOURCE)
+    check_input_dir(DESTINATION)
+
+    snapshots_dir = SOURCE / '.snapshots'
+    destination_dir = DESTINATION / '.snapshots'
+
+    snapshots = [dir / 'snapshot' for dir in snapshots_dir.iterdir() if dir.is_dir()]
+    new_snapshots = [destination_dir / snapshot.parent.name / 'snapshot' for snapshot in snapshots]
+    
+    if VERBOSE:
+        print_source_snapshots_info(snapshots_dir, snapshots)
+ 
+    if len(snapshots) == 0:
+        print('no snapshots, nothing to do')
+        return
+
+    create_destination_dir(destination_dir)
+    
+    delete_old_snapshots(destination_dir, snapshots)
+
+    create_origin_snapshot(snapshots[0], new_snapshots[0])
+    create_snapshots(snapshots, new_snapshots)
+
+    print('finished')
+
+
+if __name__ == '__main__':
+    main()
