@@ -94,8 +94,7 @@ def create_origin_snapshot(origin, new_origin):
             print(f'creating origin snapshot at: {new_origin}')
 
         new_origin.parent.mkdir(exist_ok=True)
-        cmd = f'btrfs send {origin} | btrfs receive {new_origin.parent}'
-        subprocess.call(cmd, shell=True)
+        run_cmd(f'btrfs send {origin} | btrfs receive {new_origin.parent}')
 
 
 def create_snapshots(snapshots, new_snapshots):
@@ -109,8 +108,7 @@ def create_snapshots(snapshots, new_snapshots):
 
             new_snapshot_dir = new_snapshot.parent
             new_snapshot_dir.mkdir(exist_ok=True)
-            cmd = f'btrfs send -p {parent_snapshot} {child_snapshot} | btrfs receive {new_snapshot_dir}'
-            subprocess.call(cmd, shell=True)
+            run_cmd(f'btrfs send -p {parent_snapshot} {child_snapshot} | btrfs receive {new_snapshot_dir}')
 
 
 def main():
