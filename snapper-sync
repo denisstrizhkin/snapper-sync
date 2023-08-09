@@ -85,7 +85,7 @@ def delete_old_snapshots(destination_dir, snaphots):
                 print(f'deleting old snapshot at: {snapshot}')
 
             run_cmd(f'btrfs subvolume delete {snapshot}')
-            snapshot_dir.unlink()
+            snapshot_dir.rmdir()
 
 
 def create_origin_snapshot(origin, new_origin):
